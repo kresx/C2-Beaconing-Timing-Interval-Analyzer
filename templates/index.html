@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>C2 Beaconing & Network Timing Analyzer</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Chart.js for Waterfall Timelines -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
+        .card {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+        }
+        .table-dark {
+            --bs-table-bg: #1e293b;
+            --bs-table-border-color: #334155;
+        }
+        .badge-danger { background-color: #ef4444; color: #ffffff; }
+        .badge-warning { background-color: #f59e0b; color: #1e293b; }
+        .badge-success { background-color: #10b981; color: #ffffff; }
+        .mono { font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.85rem; }
+        .btn-primary { background-color: #3b82f6; border-color: #3b82f6; }
+        .btn-primary:hover { background-color: #2563eb; }
+        .btn-success { background-color: #10b981; border-color: #10b981; }
+        .btn-success:hover { background-color: #059669; }
+    </style>
+</head>
+<body class="p-4">
+    <div class="container-fluid max-w-7xl">
+        <!-- Header -->
+        <header class="mb-4 text-center">
+            <h1 class="fw-bold text-primary display-6">🛰️ C2 Beaconing & Timing Interval Analyzer</h1>
+            <p class="text-secondary mb-0">Detect covert command & control communications using statistical timing jitter, TLS fingerprints, and AI threat hunting.</p>
+        </header>
+
+        <!-- Control Panel -->
+        <div class="row g-3 mb-4">
+            <!-- PCAP Upload Card -->
+            <div class="col-md-6">
+                <div class="card p-3 h-100">
+                    <h5 class="card-title text-light mb-2">📁 Analyze PCAP Capture</h5>
+                    <p class="text-secondary small mb-3">Upload a <code>.pcap</code> or <code>.pcapng</code> capture file for offline metric extraction.</p>
+                    <form action="/analyze_pcap" method="POST" enctype="multipart/form-data" class="d-flex gap-2">
+                        <input type="file" name="pcap_file" class="form-control bg-dark text-light border-secondary" accept=".pcap,.pcapng,.cap" required>
+                        <button type="submit" class="btn btn-primary px-4 fw-semibold">Analyze</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Live Sniffing Card -->
+            <div class="col-md-6">
+                <div class="card p-3 h-100">
+                    <h5 class="card-title text-light mb-2">⚡ Live Network Capture</h5>
+                    <p class="text-secondary small mb-3">Capture real-time packets directly from a local network interface.</p>
+                    <form action="/sniff_live" method="POST" class="d-flex gap-2">
+                        <input type="text" name="interface" class="form-control bg-dark text-light border-secondary" placeholder="Interface (e.g. Wi-Fi, Ethernet)">
+                        <input type="number" name="count" class="form-control bg-dark text-light border-secondary w-25" value="100" min="10" max="1000">
+                        <button type="submit" class="btn btn-danger px-4 fw-semibold">Start Sniff</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Global Error Notification -->
+        {% if error %}
+        <div class="alert alert-danger alert-dismissible fade show border-0" role="alert">
+            <strong>⚠️ Execution Error:</strong> {{ error }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        {% endif %}
+
+        {% if results %}
+        <!-- Claude AI Threat Hunter Card -->
+        <div class="card p-3 mb-4 border-primary bg-slate-900">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+                <div>
+                    <h5 class="text-primary mb-1">🤖 Claude AI Forensic Threat Hunting</h5>
+                    <p class="text-secondary small mb-0">Evaluate flow statistical jitter, SNI hostnames, and JA3 hashes using Anthropic's Claude API.</p>
+                </div>
+                <form action="/analyze_ai" method="POST">
+                    <input type="hidden" name="flow_data" value='{{ results | tojson | safe }}'>
+                    <button type="submit" class="btn btn-success btn-lg px-4 fs-6 fw-bold">Run Claude AI Assessment</button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Claude AI Report Display -->
+        {% if ai_report %}
+        <div class="card p-4 mb-4 border-warning">
+            <h4 class="text-warning mb-2">🎯 Claude AI Forensic Assessment Report</h4>
+            <p class="lead fs-6 text-light">{{ ai_report.analysis_summary }}</p>
+
+            <div class="mt-3">
+                {% for threat in ai_report.threats_detected %}
+                <div class="p-3 mb-2 rounded bg-dark border border-secondary">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h6 class="text-light mb-0"><code class="text-info">{{ threat.flow }}</code> — <strong>{{ threat.suspected_type }}</strong></h6>
+                        <span class="badge {% if threat.threat_level in ['CRITICAL', 'HIGH'] %}badge-danger{% else %}badge-warning{% endif %}">
+                            {{ threat.threat_level }} (Confidence: {{ threat.confidence_score }}%)
+                        </span>
+                    </div>
+                    <p class="text-secondary small mt-2 mb-0">{{ threat.reasoning }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Flow Analysis Results Table -->
+        {% if results %}
+        <div class="card p-3 mb-4">
+            <h5 class="card-title mb-3">📊 Extracted Network Flows ({{ results|length }} Flows)</h5>
+            <div class="table-responsive">
+                <table class="table table-dark table-hover align-middle mb-0">
+                    <thead>
+                        <tr class="text-secondary small text-uppercase">
+                            <th>Flow Key</th>
+                            <th>Destination IP</th>
+                            <th>Count</th>
+                            <th>Mean Interval</th>
+                            <th>Std Dev</th>
+                            <th>Jitter %</th>
+                            <th>SNI Hostname</th>
+                            <th>JA3 Hash</th>
+                            <th>Abuse Score</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in results %}
+                        <tr>
+                            <td class="mono text-light">{{ r.flow }}</td>
+                            <td class="mono text-secondary">{{ r.dst_ip }}</td>
+                            <td>{{ r.connection_count }}</td>
+                            <td>{{ r.mean_interval_sec }}s</td>
+                            <td>{{ r.std_dev_sec }}s</td>
+                            <td>
+                                {% if r.jitter_percentage < 15.0 %}
+                                    <span class="badge badge-danger">{{ r.jitter_percentage }}% (High Beaconing Risk)</span>
+                                {% elif r.jitter_percentage < 40.0 %}
+                                    <span class="badge badge-warning">{{ r.jitter_percentage }}% (Moderate Jitter)</span>
+                                {% else %}
+                                    <span class="badge badge-success">{{ r.jitter_percentage }}% (Normal Traffic)</span>
+                                {% endif %}
+                            </td>
+                            <td class="mono text-info">{{ r.sni_hostname | join(', ') if r.sni_hostname else 'N/A' }}</td>
+                            <td class="mono text-truncate text-secondary" style="max-width: 140px;" title="{{ r.ja3_fingerprints | join(', ') }}">
+                                {{ r.ja3_fingerprints | join(', ') if r.ja3_fingerprints else 'N/A' }}
+                            </td>
+                            <td>
+                                {% if r.threat_intel.abuse_score > 50 %}
+                                    <span class="badge badge-danger">{{ r.threat_intel.abuse_score }}%</span>
+                                {% elif r.threat_intel.abuse_score > 0 %}
+                                    <span class="badge badge-warning">{{ r.threat_intel.abuse_score }}%</span>
+                                {% else %}
+                                    <span class="badge badge-success">0%</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Connection Waterfall Chart -->
+        <div class="card p-3 mb-4">
+            <h5 class="card-title mb-3">📈 Packet Sequence Arrival Timeline (Waterfall Chart)</h5>
+            <canvas id="waterfallChart" style="max-height: 380px;"></canvas>
+        </div>
+
+        <!-- Safe JSON Data Script Block (Prevents Linter Errors) -->
+        <script id="flow-data" type="application/json">
+            {{ results | tojson | safe }}
+        </script>
+
+        <script>
+            // Safely parse flow JSON
+            const rawData = document.getElementById('flow-data').textContent;
+            const flowData = rawData ? JSON.parse(rawData) : [];
+
+            if (flowData.length > 0) {
+                const ctx = document.getElementById('waterfallChart').getContext('2d');
+                
+                const datasets = flowData.slice(0, 10).map((flow, index) => {
+                    const colors = ['#ef4444', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
+                    return {
+                        label: flow.flow,
+                        data: flow.timestamps_relative.map(t => ({ x: t, y: index + 1 })),
+                        borderColor: colors[index % colors.length],
+                        backgroundColor: colors[index % colors.length],
+                        showLine: false,
+                        pointRadius: 6
+                    };
+                });
+
+                new Chart(ctx, {
+                    type: 'scatter',
+                    data: { datasets: datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                title: { display: true, text: 'Relative Time Elapsed (Seconds)', color: '#94a3b8' },
+                                grid: { color: '#334155' },
+                                ticks: { color: '#94a3b8' }
+                            },
+                            y: {
+                                title: { display: true, text: 'Flow Sequence Index', color: '#94a3b8' },
+                                grid: { color: '#334155' },
+                                ticks: { color: '#94a3b8', stepSize: 1 }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                labels: { color: '#f8fafc', font: { family: 'monospace' } }
+                            }
+                        }
+                    }
+                });
+            }
+        </script>
+        {% endif %}
+    </div>
+
+    <!-- Bootstrap JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

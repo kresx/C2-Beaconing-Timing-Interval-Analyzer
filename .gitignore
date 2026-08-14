@@ -1,0 +1,16 @@
+# Secrets & API Keys
+config.py
+.env
+
+# PCAP Data & Uploads
+*.pcap
+*.pcapng
+*.cap
+uploads/
+
+# Python Cache & Virtual Environments
+__pycache__/
+*.pyc
+venv/
+.venv/
+.vscode/
