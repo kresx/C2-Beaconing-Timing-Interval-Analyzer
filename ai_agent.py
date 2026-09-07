@@ -23,8 +23,31 @@ class C2Agent:
         self.client = Anthropic(api_key=api_key)
 
     def analyze_flows(self, flow_profiles: list) -> str:
-        if not flow_profiles:
+        if not isinstance(flow_profiles, list) or not flow_profiles:
             return json.dumps({"error": "No flow profiles provided"})
+
+        # Keep prompts bounded and avoid sending unneeded packet-derived metadata.
+        max_flows = getattr(config, 'MAX_AI_FLOWS', 100)
+        def limited(value, limit=255):
+            return str(value)[:limit]
+
+        flow_profiles = [
+            {
+                "flow": limited(profile.get("flow", "")),
+                "dst_ip": limited(profile.get("dst_ip", ""), 64),
+                "connection_count": profile.get("connection_count", 0),
+                "mean_interval_sec": profile.get("mean_interval_sec", 0),
+                "std_dev_sec": profile.get("std_dev_sec", 0),
+                "jitter_percentage": profile.get("jitter_percentage", 0),
+                "ja3_fingerprints": [limited(item, 64) for item in profile.get("ja3_fingerprints", [])[:5]],
+                "sni_hostname": [limited(item, 255) for item in profile.get("sni_hostname", [])[:5]],
+                "threat_intel": profile.get("threat_intel", {}),
+            }
+            for profile in flow_profiles[:max_flows]
+            if isinstance(profile, dict)
+        ]
+        if not flow_profiles:
+            return json.dumps({"error": "No valid flow profiles provided"})
 
         system_prompt = """
         You are an elite DFIR Threat Hunter specializing in C2 Beaconing analysis.

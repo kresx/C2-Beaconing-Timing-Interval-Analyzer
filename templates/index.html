@@ -63,7 +63,8 @@
                     <p class="text-secondary small mb-3">Capture real-time packets directly from a local network interface.</p>
                     <form action="/sniff_live" method="POST" class="d-flex gap-2">
                         <input type="text" name="interface" class="form-control bg-dark text-light border-secondary" placeholder="Interface (e.g. Wi-Fi, Ethernet)">
-                        <input type="number" name="count" class="form-control bg-dark text-light border-secondary w-25" value="100" min="10" max="1000">
+                        <input type="number" name="count" class="form-control bg-dark text-light border-secondary w-25" value="100" min="1" max="5000" aria-label="Packet count">
+                        <input type="number" name="timeout" class="form-control bg-dark text-light border-secondary w-25" value="30" min="1" max="300" aria-label="Timeout in seconds">
                         <button type="submit" class="btn btn-danger px-4 fw-semibold">Start Sniff</button>
                     </form>
                 </div>
@@ -88,6 +89,10 @@
                 </div>
                 <form action="/analyze_ai" method="POST">
                     <input type="hidden" name="flow_data" value='{{ results | tojson | safe }}'>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="ai_consent" value="yes" id="ai-consent" required>
+                        <label class="form-check-label small text-secondary" for="ai-consent">I understand flow metadata will be sent to Anthropic for analysis.</label>
+                    </div>
                     <button type="submit" class="btn btn-success btn-lg px-4 fs-6 fw-bold">Run Claude AI Assessment</button>
                 </form>
             </div>
@@ -144,7 +149,9 @@
                             <td>{{ r.mean_interval_sec }}s</td>
                             <td>{{ r.std_dev_sec }}s</td>
                             <td>
-                                {% if r.jitter_percentage < 15.0 %}
+                                {% if r.connection_count < 4 %}
+                                    <span class="badge badge-warning">Insufficient samples</span>
+                                {% elif r.jitter_percentage < 15.0 %}
                                     <span class="badge badge-danger">{{ r.jitter_percentage }}% (High Beaconing Risk)</span>
                                 {% elif r.jitter_percentage < 40.0 %}
                                     <span class="badge badge-warning">{{ r.jitter_percentage }}% (Moderate Jitter)</span>

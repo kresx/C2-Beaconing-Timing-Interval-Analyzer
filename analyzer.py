@@ -104,13 +104,17 @@ def process_packets(packet_iterator) -> list:
     for pkt in packet_iterator:
         if pkt.haslayer(IP) and (pkt.haslayer(TCP) or pkt.haslayer(UDP)):
             proto = "TCP" if pkt.haslayer(TCP) else "UDP"
+            # ACK-only TCP packets reflect transport behavior, not beacon events.
+            if pkt.haslayer(TCP) and len(pkt[TCP].payload) == 0:
+                continue
             src, dst = pkt[IP].src, pkt[IP].dst
             dport = pkt[TCP].dport if pkt.haslayer(TCP) else pkt[UDP].dport
             flow_key = f"{src} -> {dst}:{dport} ({proto})"
             
             flows[flow_key].append(float(pkt.time))
             flow_meta[flow_key]["dst_ip"] = dst
-            flow_meta[flow_key]["payload_bytes"].append(len(pkt[IP].payload))
+            payload = pkt[TCP].payload if pkt.haslayer(TCP) else pkt[UDP].payload
+            flow_meta[flow_key]["payload_bytes"].append(len(payload))
             
             ja3_hash = compute_ja3(pkt)
             if ja3_hash != "N/A":
@@ -121,7 +125,7 @@ def process_packets(packet_iterator) -> list:
                 flow_meta[flow_key]["sni"].add(sni)
 
     flow_profiles = []
-    min_connections = getattr(config, 'MIN_CONNECTIONS_TO_ANALYZE', 1)
+    min_connections = getattr(config, 'MIN_CONNECTIONS_TO_ANALYZE', 4)
     
     for flow_key, timestamps in flows.items():
         if len(timestamps) < min_connections:
@@ -163,7 +167,7 @@ def extract_flow_metrics(pcap_path: str, max_packets: int = 50000) -> list:
         print(f"[!] PCAP Error: {e}")
         return []
 
-def sniff_live_traffic(interface=None, packet_count=100) -> list:
-    print(f"[*] Sniffing {packet_count} packets live...")
-    packets = sniff(iface=interface, count=packet_count, session=TCPSession)
+def sniff_live_traffic(interface=None, packet_count=100, timeout=30) -> list:
+    print(f"[*] Sniffing up to {packet_count} packets for {timeout} seconds...")
+    packets = sniff(iface=interface, count=packet_count, timeout=timeout, session=TCPSession)
     return process_packets(packets)
