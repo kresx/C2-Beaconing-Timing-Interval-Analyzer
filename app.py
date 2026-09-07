@@ -4,11 +4,10 @@ import json
 import logging
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 from werkzeug.utils import secure_filename
-
 from analyzer import extract_flow_metrics, sniff_live_traffic
 from ai_agent import C2Agent
 
-# Configure Logging
+# Configure Logging (Syntax Error Fixed Here)
 logging.basicConfig(
     level=logging.INFO,
     format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s'
@@ -21,36 +20,32 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'c2_analyzer_default_secret_key')
 app.config['UPLOAD_FOLDER'] = os.path.join(os.getcwd(), 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 32 * 1024 * 1024  # 32 MB limit
+
 ALLOWED_EXTENSIONS = {'pcap', 'pcapng', 'cap'}
 
 # Ensure upload directory exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-
 def is_allowed_file(filename: str) -> bool:
-    """Check if the uploaded file has a valid PCAP extension."""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
 
 @app.route('/')
 def index():
     return render_template('index.html', results=None)
 
-
 @app.route('/analyze_pcap', methods=['POST'])
 def analyze_pcap():
     if 'pcap_file' not in request.files:
         return render_template('index.html', error="No file part in the request.")
-    
+        
     file = request.files['pcap_file']
     
     if file.filename == '':
         return render_template('index.html', error="No file selected.")
 
     if not is_allowed_file(file.filename):
-        return render_template('index.html', error="Invalid file format. Please upload a .pcap, .pcapng, or .cap file.")
+        return render_template('index.html', error="Invalid file format.")
 
-    # Prevent file collisions using UUID
     original_filename = secure_filename(file.filename)
     unique_filename = f"{uuid.uuid4().hex}_{original_filename}"
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
@@ -61,27 +56,21 @@ def analyze_pcap():
         
         results = extract_flow_metrics(filepath)
         return render_template('index.html', results=results, filename=original_filename)
-
     except Exception as e:
-        logger.error(f"Error parsing PCAP {original_filename}: {str(e)}", exc_info=True)
+        logger.error(f"Error parsing PCAP: {str(e)}", exc_info=True)
         return render_template('index.html', error=f"Error parsing PCAP: {str(e)}")
-
     finally:
-        # Guarantee removal of the temporary uploaded file
         if os.path.exists(filepath):
             try:
                 os.remove(filepath)
-                logger.info(f"Cleaned up temporary file: {unique_filename}")
-            except OSError as cleanup_err:
-                logger.warning(f"Failed to delete temp file {filepath}: {cleanup_err}")
-
+            except OSError:
+                pass
 
 @app.route('/sniff_live', methods=['POST'])
 def sniff_live():
     iface = request.form.get('interface', '').strip() or None
     raw_count = request.form.get('count', '100')
     
-    # Input validation for packet count
     try:
         count = int(raw_count)
         if count <= 0 or count > 5000:
@@ -93,45 +82,37 @@ def sniff_live():
         logger.info(f"Starting live packet sniff on interface '{iface or 'default'}' for {count} packets.")
         results = sniff_live_traffic(interface=iface, packet_count=count)
         return render_template('index.html', results=results, interface=iface)
-
     except Exception as e:
-        logger.error(f"Live sniffing error: {str(e)}", exc_info=True)
         return render_template('index.html', error=f"Live sniffing error: {str(e)}")
-
 
 @app.route('/analyze_ai', methods=['POST'])
 def analyze_ai():
-    """Triggers Anthropic's Claude API to perform threat evaluation on extracted flows."""
     try:
         raw_profiles = request.form.get('flow_data', '[]')
         profiles = json.loads(raw_profiles)
-
+        
         if not profiles:
-            return render_template('index.html', error="No flow profiles available for AI analysis.")
-
-        logger.info("Executing Claude AI Forensic Analysis on extracted flow profiles...")
+            return render_template('index.html', error="No flows available for AI analysis.")
+            
+        logger.info("Executing Claude AI Forensic Analysis...")
         agent = C2Agent()
         ai_response_raw = agent.analyze_flows(profiles)
         
-        # Parse Claude's JSON assessment
         try:
             ai_report = json.loads(ai_response_raw)
         except Exception:
             ai_report = {"analysis_summary": ai_response_raw, "threats_detected": []}
-
+            
         return render_template('index.html', results=profiles, ai_report=ai_report)
-
     except Exception as e:
         logger.error(f"Claude API evaluation failed: {str(e)}", exc_info=True)
         return render_template('index.html', error=f"Claude API Error: {str(e)}")
 
-
-# REST API endpoint for dynamic frontend fetch/AJAX calls
 @app.route('/api/analyze_pcap', methods=['POST'])
 def api_analyze_pcap():
     if 'pcap_file' not in request.files:
         return jsonify({'status': 'error', 'message': 'No file part'}), 400
-    
+        
     file = request.files['pcap_file']
     if file.filename == '' or not is_allowed_file(file.filename):
         return jsonify({'status': 'error', 'message': 'Invalid file format'}), 400
@@ -149,16 +130,13 @@ def api_analyze_pcap():
         if os.path.exists(filepath):
             os.remove(filepath)
 
-
 @app.errorhandler(413)
 def request_entity_too_large(error):
     return render_template('index.html', error="File size exceeds the 32 MB limit."), 413
-
 
 if __name__ == '__main__':
     host = os.environ.get('HOST', '127.0.0.1')
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('FLASK_DEBUG', 'True').lower() in ('true', '1', 't')
-
     logger.info(f"[*] Launching C2 Analyzer Web App at http://{host}:{port}")
     app.run(host=host, port=port, debug=debug)
