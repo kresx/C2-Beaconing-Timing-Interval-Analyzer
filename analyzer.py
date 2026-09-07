@@ -125,7 +125,7 @@ def process_packets(packet_iterator) -> list:
                 flow_meta[flow_key]["sni"].add(sni)
 
     flow_profiles = []
-    min_connections = getattr(config, 'MIN_CONNECTIONS_TO_ANALYZE', 1)
+    min_connections = getattr(config, 'MIN_CONNECTIONS_TO_ANALYZE', 4)
     
     for flow_key, timestamps in flows.items():
         if len(timestamps) < min_connections:
