@@ -7,5 +7,6 @@ MAX_TOKENS = 4000
 
 ABUSEIPDB_API_KEY = os.getenv("ABUSEIPDB_API_KEY", "")
 
-MIN_CONNECTIONS_TO_ANALYZE = 1
+# At least four data-bearing packets provide three intervals for a meaningful jitter estimate.
+MIN_CONNECTIONS_TO_ANALYZE = 4
 DEFAULT_SNIFF_COUNT = 100
